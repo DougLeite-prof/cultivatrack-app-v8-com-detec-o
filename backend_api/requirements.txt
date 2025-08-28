@@ -1,0 +1,6 @@
+# Requirements simplificado - as dependências são instaladas diretamente no Dockerfile
+# para melhor controle de compatibilidade
+
+# Este arquivo é mantido para compatibilidade, mas as dependências
+# são instaladas em ordem específica no Dockerfile para resolver
+# conflitos entre numpy, opencv e pytorch

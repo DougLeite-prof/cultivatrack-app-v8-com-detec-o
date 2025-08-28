@@ -1,0 +1,18 @@
+# app.yaml para o FRONTEND Flet
+
+runtime: custom
+env: flex
+
+# O 'entrypoint' foi movido para o Dockerfile, então ele não é mais necessário aqui.
+
+# Habilita a conexão contínua (WebSockets) que o Flet precisa para funcionar
+network:
+  session_affinity: true
+
+# Define os recursos da máquina. Como este é só o frontend,
+# não precisa de tantos recursos quanto a API de IA.
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+
