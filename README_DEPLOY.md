@@ -162,12 +162,40 @@ Para teste com poucos agricultores:
 
 **Total estimado**: $8-30/mês para uso moderado
 
-## 🔄 Atualizações
+## 🔄 Atualizações e Deploy por Revisão
 
-Para atualizar o sistema:
+### Deploy Tradicional (Substitui versão atual)
+Para atualizar o sistema substituindo a versão atual:
 1. Faça suas modificações no código
 2. Execute novamente: `.\deploy_all.ps1` ou `./deploy_all.sh`
 3. O sistema fará build e deploy das novas versões
+
+### Deploy por Revisão (Mantém versão atual) - **RECOMENDADO**
+Para fazer deploy de uma nova versão mantendo a atual rodando:
+
+```powershell
+# 1. Criar nova revisão (sem tráfego)
+.\deploy_revision.ps1
+
+# 2. Gerenciar tráfego entre versões
+.\manage_traffic.ps1
+```
+
+#### Vantagens do Deploy por Revisão:
+- ✅ **Zero downtime**: Versão atual continua funcionando
+- ✅ **Testes seguros**: Nova versão recebe 0% do tráfego inicialmente
+- ✅ **Migração gradual**: Pode dividir tráfego (ex: 10% nova, 90% atual)
+- ✅ **Rollback instantâneo**: Pode voltar à versão anterior rapidamente
+- ✅ **A/B Testing**: Permite comparar versões em produção
+
+#### Fluxo Recomendado:
+1. **Deploy da revisão**: `.\deploy_revision.ps1`
+2. **Teste a nova versão**: Acesse a URL com tag específica
+3. **Migração gradual**: 
+   - Comece com 10% do tráfego na nova versão
+   - Monitore por algumas horas
+   - Aumente gradualmente (50%, 100%)
+4. **Rollback se necessário**: Volte para 100% na versão anterior
 
 ## 📞 Suporte
 

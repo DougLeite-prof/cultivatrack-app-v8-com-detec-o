@@ -347,10 +347,34 @@ def generate_risk_graph(classificacao_list: List[str]) -> str:
 # --- LÓGICA DA INTERFACE ---
 
 def main(page: ft.Page):
-    page.title = "CultivaTrack"
+    # Configurações básicas da página
+    page.title = "PhytoVision"
     page.scroll = ft.ScrollMode.ADAPTIVE
     page.window_width = 450
     page.window_height = 800
+    
+    # Configurações PWA para instalação como app
+    page.description = "Sistema inteligente para monitoramento e diagnóstico de doenças em plantas"
+    page.theme_color = "#4CAF50"
+    
+    # Metadados PWA
+    page.meta_tags = [
+        {"name": "application-name", "content": "PhytoVision"},
+        {"name": "apple-mobile-web-app-title", "content": "PhytoVision"},
+        {"name": "apple-mobile-web-app-capable", "content": "yes"},
+        {"name": "apple-mobile-web-app-status-bar-style", "content": "default"},
+        {"name": "mobile-web-app-capable", "content": "yes"},
+        {"name": "msapplication-TileColor", "content": "#4CAF50"},
+        {"name": "msapplication-config", "content": "/static/browserconfig.xml"}
+    ]
+    
+    # Links para PWA
+    page.link_tags = [
+        {"rel": "manifest", "href": "/manifest.json"},
+        {"rel": "icon", "type": "image/png", "sizes": "192x192", "href": "/static/icon-192.png"},
+        {"rel": "icon", "type": "image/png", "sizes": "512x512", "href": "/static/icon-512.png"},
+        {"rel": "apple-touch-icon", "sizes": "192x192", "href": "/static/icon-192.png"}
+    ]
 
     # Limpa o estado da aplicação a cada recarregamento da página
     APP_STATE.clear()
@@ -634,9 +658,19 @@ def main(page: ft.Page):
             padding=25, bgcolor="#F1F8E9", border_radius=20, width=380
         )
 
-        # Processamento IA (simplificado)
+        # Processamento IA com barra de progresso visual completa
         progress_ring = ft.ProgressRing(visible=False, width=60, height=60, color="#4CAF50")
-        progress_text = ft.Text("", size=18, color="#2E7D32")
+        progress_bar = ft.ProgressBar(
+            width=350, 
+            height=8, 
+            color="#4CAF50", 
+            bgcolor="#E0E0E0", 
+            visible=False,
+            value=0.0,
+            border_radius=10
+        )
+        progress_text = ft.Text("", size=18, color="#2E7D32", text_align=ft.TextAlign.CENTER)
+        progress_detail = ft.Text("", size=14, color="#424242", text_align=ft.TextAlign.CENTER)
         results_container = ft.Column(alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20)
 
         def calcular_severidade_callback(e):
@@ -647,14 +681,28 @@ def main(page: ft.Page):
 
             def processing():
                 try:
-                progress_text.value, progress_ring.visible = "Processando com IA...", True
-                page.update()
+                    # Inicializar barra de progresso
+                    progress_text.value = "Iniciando processamento com IA..."
+                    progress_detail.value = "Preparando imagens para análise"
+                    progress_ring.visible = True
+                    progress_bar.visible = True
+                    progress_bar.value = 0.0
+                    page.update()
                     
                     # Processar cada imagem
                     severidades = []
                     plot_images = []
+                    total_images = len(APP_STATE.get("uploaded_files_data", []))
                     
-                    for file_data in APP_STATE.get("uploaded_files_data", []):
+                    for i, file_data in enumerate(APP_STATE.get("uploaded_files_data", [])):
+                        # Atualizar progresso
+                        current_step = i + 1
+                        progress_percentage = (current_step - 1) / total_images
+                        progress_bar.value = progress_percentage
+                        progress_text.value = f"Processando imagem {current_step} de {total_images}"
+                        progress_detail.value = f"Analisando lesões com inteligência artificial..."
+                        page.update()
+                        
                         # Converter bytes para base64 antes de enviar
                         import base64
                         file_b64 = base64.b64encode(file_data["bytes"]).decode('utf-8')
@@ -672,18 +720,33 @@ def main(page: ft.Page):
                             severidades.append(result.get("severity", 0))
                             plot_images.append(result.get("plot_image_b64", ""))
                             recomendacao = result.get("recomendacao", {})
+                            
+                            # Atualizar progresso com mais detalhes
+                            severity = result.get("severity", 0)
+                            progress_detail.value = f"Imagem {current_step}: {severity:.2f}% de severidade detectada"
+                            page.update()
                         else:
                             print(f"Erro na API: {response.status_code} - {response.text}")
                             progress_text.value = f"Erro na API: {response.status_code}"
+                            progress_detail.value = f"Falha no processamento da imagem {current_step}"
                             progress_ring.visible = False
+                            progress_bar.visible = False
                             page.update()
                             return
+                    
+                    # Finalizar processamento
+                    progress_bar.value = 1.0
+                    progress_text.value = "Finalizando análise..."
+                    progress_detail.value = "Calculando resultados finais"
+                    page.update()
                     
                     # Calcular severidade média
                     severidade_media = sum(severidades) / len(severidades) if severidades else 0.0
                     
                     progress_text.value = f"Severidade média: {severidade_media:.2f}%"
+                    progress_detail.value = "Processamento concluído com sucesso!"
                     progress_ring.visible = False
+                    progress_bar.visible = False
                     
                     # Exibir resultados
                     results_container.controls.clear()
@@ -712,7 +775,7 @@ def main(page: ft.Page):
                                             icon_color="#D32F2F",
                                             icon_size=28,
                                             tooltip="Baixar PDF da Calda Bordalesa",
-                                            on_click=lambda _: print("PDF não disponível no Cloud Run")
+                                            on_click=lambda _: page.launch_url("/api/pdf/calda-bordalesa")
                                         ),
                                         ft.Text("Baixar instruções em PDF", size=14, color="#424242")
                                     ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
@@ -782,7 +845,9 @@ def main(page: ft.Page):
                 except Exception as ex:
                     print(f"Erro no processamento: {ex}")
                     progress_text.value = f"Erro: {str(ex)}"
+                    progress_detail.value = "Ocorreu um erro durante o processamento"
                     progress_ring.visible = False
+                    progress_bar.visible = False
                 page.update()
 
             threading.Thread(target=processing, daemon=True).start()
@@ -794,18 +859,28 @@ def main(page: ft.Page):
         page.add(ft.Column([
             header_avalia, container_amostragem, resultado_container, container_upload,
             ft.Container(content=btn_calcular_severidade, width=300, alignment=ft.alignment.center),
-            progress_ring, progress_text, results_container,
-            ft.ElevatedButton("Voltar", on_click=lambda e: mostrar_nova_tela(APP_STATE.get("cidade_selecionada"), APP_STATE.get("cultura_selecionada")), bgcolor="#4CAF50", color=ft.Colors.WHITE, style=button_style)
+            # Container para indicadores de progresso
+            ft.Container(
+                content=ft.Column([
+                    progress_ring,
+                    progress_bar,
+                    progress_text,
+                    progress_detail
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                width=380,
+                alignment=ft.alignment.center
+            ),
+            results_container,
+            ft.ElevatedButton("Voltar", on_click=lambda e: mostrar_nova_tela(APP_STATE.get("lat"), APP_STATE.get("lon"), APP_STATE.get("cultura_selecionada"), APP_STATE.get("location_display")), bgcolor="#4CAF50", color=ft.Colors.WHITE, style=button_style)
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, scroll=ft.ScrollMode.AUTO, expand=True, spacing=25))
         
         # Iniciar polling (igual ao código original)
         poll_uploads()
 
-    def mostrar_nova_tela(cidade, cultura):
+    def mostrar_nova_tela(lat, lon, cultura, location_display):
         page.clean()
         
-        # --- Lógica de busca de dados (copiada do original) ---
-        lat, lon = CITY_COORDINATES[cidade]["lat"], CITY_COORDINATES[cidade]["lon"]
+        # --- Lógica de busca de dados (modificada para aceitar coordenadas diretamente) ---
         APP_STATE["lat"], APP_STATE["lon"] = lat, lon
         APP_STATE["local_sunrise"], APP_STATE["local_sunset"] = get_sun_times(lat, lon)
         APP_STATE["weather_data"] = get_weather_data(lat, lon)
@@ -827,12 +902,12 @@ def main(page: ft.Page):
         icon_filename = f"{weather_code}_{periodo}.png"
         
         # --- Construção da UI (copiada do original) ---
-        header = ft.Row([ft.Icon(ft.Icons.ECO_ROUNDED, size=40), ft.Text("CultivaTrack", size=32, weight=ft.FontWeight.BOLD)], alignment=ft.MainAxisAlignment.CENTER)
+        header = ft.Row([ft.Icon(ft.Icons.ECO_ROUNDED, size=40), ft.Text("PhytoVision", size=32, weight=ft.FontWeight.BOLD)], alignment=ft.MainAxisAlignment.CENTER)
         
         subbox_clima = ft.Container(
             content=ft.Column([
                 ft.Text("Clima Atual", size=22, weight=ft.FontWeight.BOLD, color="#2E7D32"),
-                ft.Row([ft.Icon(ft.Icons.PIN_DROP_ROUNDED), ft.Text(cidade, size=16)]),
+                ft.Row([ft.Icon(ft.Icons.PIN_DROP_ROUNDED), ft.Text(location_display, size=16)]),
                 ft.Row([ft.Icon(ft.Icons.LOCAL_FLORIST_ROUNDED), ft.Text(cultura, size=16)]),
                 create_image_with_fallback(f"icones_weathercode_openmeteo/{icon_filename}", width=100, height=100),
                 ft.Text(WEATHER_CODES.get(weather_code, "Desconhecido"), size=16, text_align=ft.TextAlign.CENTER),
@@ -923,7 +998,7 @@ def main(page: ft.Page):
         graph_image = ft.Image(src_base64=generate_risk_graph(APP_STATE.get("classificacao_list", [])), width=380, fit=ft.ImageFit.CONTAIN) if APP_STATE.get("classificacao_list") else ft.Text("Dados de risco não disponíveis.")
         page.add(ft.Column([
             ft.Container(content=graph_image, padding=20, bgcolor=ft.Colors.WHITE, border_radius=20),
-            ft.ElevatedButton("Voltar", on_click=lambda _: mostrar_nova_tela(APP_STATE.get("cidade_selecionada"), APP_STATE.get("cultura_selecionada")), style=button_style)
+            ft.ElevatedButton("Voltar", on_click=lambda _: mostrar_nova_tela(APP_STATE.get("lat"), APP_STATE.get("lon"), APP_STATE.get("cultura_selecionada"), APP_STATE.get("location_display")), style=button_style)
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=25, expand=True))
         page.update()
         
@@ -981,7 +1056,7 @@ def main(page: ft.Page):
                     ),
                     ft.ElevatedButton(
                         "Voltar",
-                        on_click=lambda e: mostrar_nova_tela(APP_STATE.get("cidade_selecionada"), APP_STATE.get("cultura_selecionada")),
+                        on_click=lambda e: mostrar_nova_tela(APP_STATE.get("lat"), APP_STATE.get("lon"), APP_STATE.get("cultura_selecionada"), APP_STATE.get("location_display")),
                         style=button_style
                     )
                 ],
@@ -1062,7 +1137,7 @@ def main(page: ft.Page):
                             spacing=20
                         )
                     ),
-                    ft.ElevatedButton("Voltar", on_click=lambda _: mostrar_nova_tela(APP_STATE.get("cidade_selecionada"), APP_STATE.get("cultura_selecionada")), style=button_style)
+                    ft.ElevatedButton("Voltar", on_click=lambda _: mostrar_nova_tela(APP_STATE.get("lat"), APP_STATE.get("lon"), APP_STATE.get("cultura_selecionada"), APP_STATE.get("location_display")), style=button_style)
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -1073,38 +1148,131 @@ def main(page: ft.Page):
         page.update()
 
     # --- Tela Inicial ---
-    header_inicial = ft.Row([ft.Icon(ft.Icons.ECO_ROUNDED, size=40), ft.Text("CultivaTrack", size=32, weight=ft.FontWeight.BOLD)], alignment=ft.MainAxisAlignment.CENTER)
+    header_inicial = ft.Row([ft.Icon(ft.Icons.ECO_ROUNDED, size=40), ft.Text("PhytoVision", size=32, weight=ft.FontWeight.BOLD)], alignment=ft.MainAxisAlignment.CENTER)
     dropdown_cultura = create_dropdown("Selecione a Cultura", ["Pimenta"], dropdown_style)
     dropdown_doenca = create_dropdown("Selecione a Doença", ["Cercosporiose"], dropdown_style)
+    
+    # Opções de localização
+    location_option = ft.RadioGroup(
+        content=ft.Column([
+            ft.Radio(value="cidade", label="Selecionar cidade predefinida"),
+            ft.Radio(value="manual", label="Inserir coordenadas manualmente")
+        ]),
+        value="cidade"
+    )
+    
     dropdown_cidade = create_dropdown("Selecione a Cidade", list(CITY_COORDINATES.keys()), dropdown_style)
+    
+    # Campos para coordenadas manuais (inicialmente ocultos)
+    latitude_field = ft.TextField(
+        label="Latitude (-90 a 90)",
+        keyboard_type=ft.KeyboardType.NUMBER,
+        helper_text="Ex: -10.9475",
+        visible=False,
+        expand=True  # Faz o campo se adaptar ao espaço disponível
+    )
+    longitude_field = ft.TextField(
+        label="Longitude (-180 a 180)",
+        keyboard_type=ft.KeyboardType.NUMBER,
+        helper_text="Ex: -37.0731",
+        visible=False,
+        expand=True  # Faz o campo se adaptar ao espaço disponível
+    )
+    
+    coords_container = ft.Row(
+        [latitude_field, longitude_field], 
+        alignment=ft.MainAxisAlignment.CENTER, 
+        visible=False,
+        spacing=10,  # Espaçamento entre os campos
+        width=380    # Largura máxima para não exceder tela
+    )
+    
     button_ok = ft.ElevatedButton("Começar", style=button_style, on_click=lambda _: on_ok_click(), disabled=True)
     alerta_texto = ft.Container(content=ft.Row([ft.Icon(ft.Icons.INFO_ROUNDED), ft.Text("As recomendações pressupõem cultivo em boas condições nutricionais.", width=280)], alignment=ft.MainAxisAlignment.CENTER), padding=20, bgcolor="#FFF8E1")
 
-    def check_button_enable(e):
-        button_ok.disabled = not all([dropdown_cultura.value, dropdown_doenca.value, dropdown_cidade.value])
+    def validate_coordinates():
+        """Valida se as coordenadas inseridas são válidas"""
+        try:
+            lat = float(latitude_field.value) if latitude_field.value else None
+            lon = float(longitude_field.value) if longitude_field.value else None
+            if lat is None or lon is None:
+                return False
+            return -90 <= lat <= 90 and -180 <= lon <= 180
+        except ValueError:
+            return False
+    
+    def on_location_option_change(e):
+        """Alterna entre cidade predefinida e coordenadas manuais"""
+        is_manual = location_option.value == "manual"
+        dropdown_cidade.visible = not is_manual
+        coords_container.visible = is_manual
+        latitude_field.visible = is_manual
+        longitude_field.visible = is_manual
+        check_button_enable(None)
         page.update()
     
+    def check_button_enable(e):
+        """Verifica se o botão pode ser habilitado baseado nas seleções"""
+        cultura_ok = bool(dropdown_cultura.value)
+        doenca_ok = bool(dropdown_doenca.value)
+        
+        if location_option.value == "cidade":
+            location_ok = bool(dropdown_cidade.value)
+        else:  # manual
+            location_ok = validate_coordinates()
+        
+        button_ok.disabled = not all([cultura_ok, doenca_ok, location_ok])
+        page.update()
+    
+    location_option.on_change = on_location_option_change
     dropdown_cultura.on_change = dropdown_doenca.on_change = dropdown_cidade.on_change = check_button_enable
+    latitude_field.on_change = longitude_field.on_change = check_button_enable
     
     def on_ok_click():
-        cidade, cultura = dropdown_cidade.value, dropdown_cultura.value
-        if not all([cidade, cultura]): return
+        cultura = dropdown_cultura.value
+        if not cultura: return
+        
+        # Obter coordenadas baseado na seleção
+        if location_option.value == "cidade":
+            cidade = dropdown_cidade.value
+            if not cidade: return
+            lat, lon = CITY_COORDINATES[cidade]["lat"], CITY_COORDINATES[cidade]["lon"]
+            location_display = cidade
+        else:  # manual
+            if not validate_coordinates(): return
+            lat, lon = float(latitude_field.value), float(longitude_field.value)
+            location_display = f"Lat: {lat:.4f}, Lon: {lon:.4f}"
+            cidade = None
         
         page.clean()
         page.add(ft.Column([ft.ProgressRing(), ft.Text("Carregando dados...")], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, expand=True))
         page.update()
         
         APP_STATE["cidade_selecionada"] = cidade
+        APP_STATE["location_display"] = location_display
         APP_STATE["cultura_selecionada"] = cultura
         
         # Usar um thread para não bloquear a UI enquanto os dados são carregados
-        threading.Thread(target=lambda: mostrar_nova_tela(cidade, cultura), daemon=True).start()
+        threading.Thread(target=lambda: mostrar_nova_tela(lat, lon, cultura, location_display), daemon=True).start()
 
     def mostrar_tela_inicial(e=None):
         page.clean()
         page.add(
             ft.Column([
-                header_inicial, dropdown_cultura, dropdown_doenca, dropdown_cidade,
+                header_inicial, 
+                dropdown_cultura, 
+                dropdown_doenca,
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Selecione a localização:", size=16, weight=ft.FontWeight.BOLD),
+                        location_option,
+                        dropdown_cidade,
+                        coords_container
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
+                    padding=20,
+                    bgcolor="#F5F5F5",
+                    border_radius=10
+                ),
                 ft.Column([button_ok, alerta_texto], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20)
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20, scroll=ft.ScrollMode.AUTO, expand=True)
         )
@@ -1125,7 +1293,7 @@ import mimetypes
 from typing import List
 
 # IMPORTANTE: Criar a instância FastAPI PRIMEIRO, depois adicionar o Flet
-app = FastAPI(title="CultivaTrack", description="Sistema de Monitoramento Agrícola")
+app = FastAPI(title="PhytoVision", description="Sistema de Monitoramento Agrícola")
 
 # === ROTAS API ESPECÍFICAS (ANTES DO FLET) ===
 if os.path.exists("assets"):
@@ -1166,6 +1334,24 @@ if os.path.exists("assets"):
             }
         )
     
+    # Rota específica para o manifest PWA
+    @app.get("/manifest.json")
+    async def serve_manifest():
+        """Serve o manifest.json para PWA"""
+        manifest_path = os.path.join("assets", "manifest.json")
+        
+        if not os.path.exists(manifest_path):
+            raise HTTPException(status_code=404, detail="Manifest não encontrado")
+        
+        return FileResponse(
+            manifest_path,
+            media_type="application/json",
+            headers={
+                "Cache-Control": "public, max-age=86400",  # Cache por 1 dia
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    
     # Rota para servir assets estáticos
     @app.get("/api/assets/{file_path:path}")
     async def serve_assets_api(file_path: str):
@@ -1192,7 +1378,7 @@ async def get_upload_page():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload - CultivaTrack</title>
+    <title>Upload - PhytoVision</title>
     <style>
         body { margin: 0; padding: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; }
         .modal { position: relative; background: #fff; width: 320px; padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); text-align: center; }
@@ -1224,8 +1410,11 @@ async def get_upload_page():
         <input type="file" id="fileInputGallery" multiple accept="image/*">
         
         <div class="camera-buttons">
+            <button class="camera-btn" onclick="openCameraWithGuide()">
+                <span class="icon">📷</span> Câmera com Guia
+            </button>
             <button class="camera-btn" onclick="document.getElementById('fileInputCamera').click()">
-                <span class="icon">📷</span> Câmera
+                <span class="icon">📷</span> Câmera Simples
             </button>
             <button class="camera-btn gallery-btn" onclick="document.getElementById('fileInputGallery').click()">
                 <span class="icon">🖼️</span> Galeria
@@ -1322,7 +1511,190 @@ async def get_upload_page():
         // Detectar se é dispositivo móvel e mostrar dica
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (isMobile) {
-            statusDiv.innerHTML = "📱 <strong>Dica:</strong> Use 'Câmera' para fotos diretas ou 'Galeria' para imagens salvas.";
+            statusDiv.innerHTML = "📱 <strong>Dica:</strong> Use 'Câmera com Guia' para melhor centralização das folhas.";
+        }
+
+        // === FUNÇÃO PARA CÂMERA COM GUIA VISUAL ===
+        function openCameraWithGuide() {
+            // Criar modal da câmera com guia
+            const cameraModal = document.createElement('div');
+            cameraModal.id = 'cameraModal';
+            cameraModal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: #000;
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            cameraModal.innerHTML = `
+                <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                    <video id="cameraVideo" autoplay playsinline style="
+                        width: 100%;
+                        height: 100%;
+                        object-fit: cover;
+                    "></video>
+                    
+                    <!-- Sobreposição com guias visuais -->
+                    <div style="
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        pointer-events: none;
+                        z-index: 1;
+                    ">
+                        <!-- Retângulo guia central (50% do tamanho da tela) -->
+                        <div style="
+                            position: absolute;
+                            top: 25%;
+                            left: 25%;
+                            width: 50%;
+                            height: 50%;
+                            border: 3px solid #4CAF50;
+                            border-radius: 15px;
+                            box-shadow: 0 0 0 2px rgba(255,255,255,0.8);
+                        "></div>
+                        
+                        <!-- Linha horizontal central -->
+                        <div style="
+                            position: absolute;
+                            top: 50%;
+                            left: 25%;
+                            width: 50%;
+                            height: 2px;
+                            background: #4CAF50;
+                            box-shadow: 0 0 0 1px rgba(255,255,255,0.8);
+                            transform: translateY(-50%);
+                        "></div>
+                        
+                        <!-- Linha vertical central -->
+                        <div style="
+                            position: absolute;
+                            left: 50%;
+                            top: 25%;
+                            width: 2px;
+                            height: 50%;
+                            background: #4CAF50;
+                            box-shadow: 0 0 0 1px rgba(255,255,255,0.8);
+                            transform: translateX(-50%);
+                        "></div>
+                        
+                        <!-- Instruções -->
+                        <div style="
+                            position: absolute;
+                            top: 10%;
+                            left: 50%;
+                            transform: translateX(-50%);
+                            background: rgba(0,0,0,0.7);
+                            color: white;
+                            padding: 10px 20px;
+                            border-radius: 10px;
+                            text-align: center;
+                            font-size: 16px;
+                        ">
+                            🍃 Centralize a folha no retângulo verde<br>
+                            📏 Use as linhas para alinhamento
+                        </div>
+                    </div>
+                    
+                    <!-- Botões de controle -->
+                    <div style="
+                        position: absolute;
+                        bottom: 20px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        display: flex;
+                        gap: 20px;
+                        z-index: 2;
+                    ">
+                        <button id="captureBtn" style="
+                            width: 70px;
+                            height: 70px;
+                            border-radius: 50%;
+                            border: 4px solid #fff;
+                            background: #4CAF50;
+                            color: white;
+                            font-size: 24px;
+                            cursor: pointer;
+                            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                        ">📷</button>
+                        
+                        <button id="closeCameraBtn" style="
+                            width: 50px;
+                            height: 50px;
+                            border-radius: 50%;
+                            border: 3px solid #fff;
+                            background: #f44336;
+                            color: white;
+                            font-size: 20px;
+                            cursor: pointer;
+                            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+                        ">✕</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(cameraModal);
+
+            // Inicializar câmera
+            const video = document.getElementById('cameraVideo');
+            const captureBtn = document.getElementById('captureBtn');
+            const closeCameraBtn = document.getElementById('closeCameraBtn');
+            let stream = null;
+
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    facingMode: 'environment',  // Câmera traseira
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                } 
+            })
+            .then(function(cameraStream) {
+                stream = cameraStream;
+                video.srcObject = stream;
+            })
+            .catch(function(err) {
+                alert('Erro ao acessar a câmera: ' + err.message);
+                document.body.removeChild(cameraModal);
+            });
+
+            // Função para capturar foto
+            captureBtn.addEventListener('click', function() {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0);
+                
+                // Converter para blob
+                canvas.toBlob(function(blob) {
+                    const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                    selectedFiles.push(file);
+                    statusDiv.innerText = `${selectedFiles.length} imagem(ns) capturada(s)`;
+                    
+                    // Fechar câmera
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                    document.body.removeChild(cameraModal);
+                }, 'image/jpeg', 0.9);
+            });
+
+            // Função para fechar câmera
+            closeCameraBtn.addEventListener('click', function() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                document.body.removeChild(cameraModal);
+            });
         }
     </script>
 </body>
