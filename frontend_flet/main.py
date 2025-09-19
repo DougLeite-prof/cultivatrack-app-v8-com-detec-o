@@ -25,7 +25,7 @@ import os
 
 # --- URL DA SUA API (Preenchida com a URL do seu serviço Cloud Run) ---
 # Substitua pela URL real da sua API quando implantada
-API_URL = "https://cultivatrack-api-317628613130.southamerica-east1.run.app"
+API_URL = "https://revisao-deteccao-v6---cultivatrack-api-5f6w6oqomq-rj.a.run.app"
 
 # --- Constantes e Funções Leves (Clima, Gráficos, etc.) ---
 WEATHER_CODES = {
@@ -334,7 +334,8 @@ def generate_risk_graph(classificacao_list: List[str]) -> str:
     bar_colors = ['#4CAF50' if v == 1 else '#FFCA28' if v == 2 else '#FF5722' if v == 3 else '#D32F2F' for v in risk_values]
     plt.bar(x_values, risk_values, color=bar_colors, width=0.7, alpha=0.8, edgecolor='#1976D2', linewidth=1)
     plt.xlabel("Hora Local", fontsize=14, fontweight='bold', color='#424242')
-    plt.title("Gráfico de Risco Climático para Cercosporiose", fontsize=16, fontweight='bold', color='#2E7D32')
+    doenca_titulo = APP_STATE.get("doenca_selecionada", "Cercosporiose")
+    plt.title(f"Gráfico de Risco Climático para {doenca_titulo}", fontsize=16, fontweight='bold', color='#2E7D32')
     plt.yticks([1, 2, 3, 4], ["Baixo", "Moderado", "Elevado", "Alto"], fontsize=12, color='#424242')
     plt.xticks(tick_positions, tick_labels, fontsize=12, color='#424242')
     plt.grid(True, linestyle='--', alpha=0.7)
@@ -939,7 +940,7 @@ def main(page: ft.Page):
             alert_text = "\n".join(f"{k}: {v / total_horas * 100:.1f}%" for k, v in risco_counts.items())
             subbox_alerta = ft.Container(
                 content=ft.Column([
-                    ft.Text("Status de alerta para Cercosporiose (48h)", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, color="#2E7D32"),
+                    ft.Text(f"Status de alerta para {APP_STATE.get('doenca_selecionada', 'Cercosporiose')} (48h)", size=20, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, color="#2E7D32"),
                     ft.Text(alert_text, size=16, text_align=ft.TextAlign.CENTER),
                     ft.ElevatedButton("Gráfico", icon=ft.Icons.SHOW_CHART, on_click=abrir_tela_grafico, style=button_style, bgcolor="#1976D2")
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
@@ -959,17 +960,19 @@ def main(page: ft.Page):
             botao_recomendacao.opacity = 0.5 if e.control.value else 1.0
             page.update()
             
+        doenca_selecionada = APP_STATE.get("doenca_selecionada", "Cercosporiose").lower()
         botao_deslizante = ft.Container(
             content=ft.Column([
-                ft.Text("Existem sinais de cercosporiose no cultivo?", size=18, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, color="#2E7D32"),
+                ft.Text(f"Existem sinais de {doenca_selecionada} no cultivo?", size=18, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER, color="#2E7D32"),
                 ft.Row([ft.Text("Não"), ft.Switch(value=False, on_change=toggle_botoes), ft.Text("Sim")], alignment=ft.MainAxisAlignment.CENTER)
             ], spacing=15),
             padding=25, bgcolor=ft.Colors.WHITE, border_radius=20, width=380
         )
         
-        # NOVO: Botão "Sobre a Cercosporiose" adicionado
+            # Botão dinâmico baseado na doença selecionada
+        doenca_selecionada = APP_STATE.get("doenca_selecionada", "Cercosporiose")
         botao_sobre = ft.ElevatedButton(
-            "Sobre a Cercosporiose",
+            f"Sobre a {doenca_selecionada}",
             on_click=abrir_tela_sobre,
             width=280,
             bgcolor="#4CAF50",
@@ -977,7 +980,7 @@ def main(page: ft.Page):
             style=button_style,
             content=ft.Row(
                 controls=[ft.Icon(ft.Icons.INFO_OUTLINED, size=20, color="white"),
-                          ft.Text("Sobre a Cercosporiose", size=18)],
+                          ft.Text(f"Sobre a {doenca_selecionada}", size=18)],
                 alignment=ft.MainAxisAlignment.CENTER,
                 spacing=10
             )
@@ -988,7 +991,20 @@ def main(page: ft.Page):
             header, subbox_clima, subbox_evapotranspiracao, subbox_alerta,
             botao_sobre, # Botão adicionado aqui
             botao_deslizante, botao_avaliar, botao_recomendacao,
-            ft.ElevatedButton("Voltar para Início", on_click=lambda e: mostrar_tela_inicial(), style=button_style)
+            ft.Row([
+                ft.ElevatedButton("Selecionar Outra Doença", 
+                                on_click=lambda e: mostrar_tela_selecao_doencas(
+                                    APP_STATE.get("cultura_selecionada"), 
+                                    APP_STATE.get("lat"), 
+                                    APP_STATE.get("lon"), 
+                                    APP_STATE.get("location_display"), 
+                                    APP_STATE.get("cidade_selecionada")
+                                ), 
+                                bgcolor="#FF9800", color=ft.Colors.WHITE, style=button_style),
+                ft.ElevatedButton("Voltar ao Início", 
+                                on_click=lambda e: mostrar_tela_inicial(), 
+                                bgcolor="#9E9E9E", color=ft.Colors.WHITE, style=button_style)
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=20, scroll=ft.ScrollMode.AUTO, expand=True))
         page.update()
     
@@ -1149,8 +1165,7 @@ def main(page: ft.Page):
 
     # --- Tela Inicial ---
     header_inicial = ft.Row([ft.Icon(ft.Icons.ECO_ROUNDED, size=40), ft.Text("PhytoVision", size=32, weight=ft.FontWeight.BOLD)], alignment=ft.MainAxisAlignment.CENTER)
-    dropdown_cultura = create_dropdown("Selecione a Cultura", ["Pimenta"], dropdown_style)
-    dropdown_doenca = create_dropdown("Selecione a Doença", ["Cercosporiose"], dropdown_style)
+    dropdown_cultura = create_dropdown("Selecione a Cultura", ["Pimenta", "Tomate"], dropdown_style)
     
     # Opções de localização
     location_option = ft.RadioGroup(
@@ -1214,20 +1229,193 @@ def main(page: ft.Page):
     def check_button_enable(e):
         """Verifica se o botão pode ser habilitado baseado nas seleções"""
         cultura_ok = bool(dropdown_cultura.value)
-        doenca_ok = bool(dropdown_doenca.value)
         
         if location_option.value == "cidade":
             location_ok = bool(dropdown_cidade.value)
         else:  # manual
             location_ok = validate_coordinates()
         
-        button_ok.disabled = not all([cultura_ok, doenca_ok, location_ok])
+        button_ok.disabled = not all([cultura_ok, location_ok])
         page.update()
     
     location_option.on_change = on_location_option_change
-    dropdown_cultura.on_change = dropdown_doenca.on_change = dropdown_cidade.on_change = check_button_enable
+    dropdown_cultura.on_change = dropdown_cidade.on_change = check_button_enable
     latitude_field.on_change = longitude_field.on_change = check_button_enable
     
+    def mostrar_tela_selecao_doencas(cultura, lat, lon, location_display, cidade):
+        """Tela para seleção de doenças baseada na cultura escolhida"""
+        page.clean()
+        
+        # Header
+        header_doencas = ft.Row([
+            ft.Icon(ft.Icons.LOCAL_FLORIST_ROUNDED, size=40, color="#4CAF50"), 
+            ft.Text(f"Doenças - {cultura}", size=28, weight=ft.FontWeight.BOLD, color="#2E7D32")
+        ], alignment=ft.MainAxisAlignment.CENTER, spacing=15)
+        
+        # Container para doenças
+        doencas_container = ft.Column(spacing=20, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        
+        if cultura == "Pimenta":
+            # Cercosporiose (funcional)
+            cercosporiose_card = ft.Container(
+                content=ft.Column([
+                    create_image_with_fallback(
+                        "chilli-cercospora-leaf-spot-pepper-1560239911.jpg", 
+                        width=300, height=180, fit=ft.ImageFit.COVER, border_radius=15
+                    ),
+                    ft.Text("Cercosporiose", size=22, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                    ft.Text("(Cercospora capsici)", size=16, color="#424242", italic=True),
+                    ft.Text(
+                        "Aparecem manchas redondas nas folhas, com o centro marrom e a borda mais escura. "
+                        "Quando a doença avança, as folhas podem cair, deixando a planta fraca.",
+                        size=14, text_align=ft.TextAlign.JUSTIFY, color="#424242"
+                    ),
+                    ft.ElevatedButton(
+                        "Selecionar",
+                        on_click=lambda e: prosseguir_com_doenca("Cercosporiose", lat, lon, cultura, location_display),
+                        bgcolor="#4CAF50", color=ft.Colors.WHITE, style=button_style
+                    )
+                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=20, bgcolor="#F1F8E9", border_radius=20, width=360,
+                shadow=ft.BoxShadow(blur_radius=10, spread_radius=1, color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK))
+            )
+            
+            # Mosaico (em desenvolvimento)
+            mosaico_card = ft.Container(
+                content=ft.Column([
+                    create_image_with_fallback(
+                        "mosaico.jpg", 
+                        width=300, height=180, fit=ft.ImageFit.COVER, border_radius=15
+                    ),
+                    ft.Text("Mosaico", size=22, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                    ft.Text("(Virose do mosaico em pimenteira)", size=16, color="#424242", italic=True),
+                    ft.Text(
+                        "Vírus que causa padrões de mosaico nas folhas, com áreas verdes claras e escuras alternadas. "
+                        "Pode causar deformações e redução no crescimento da planta.",
+                        size=14, text_align=ft.TextAlign.JUSTIFY, color="#424242"
+                    ),
+                    ft.ElevatedButton(
+                        "Selecionar",
+                        on_click=lambda e: prosseguir_com_doenca("Mosaico", lat, lon, cultura, location_display),
+                        bgcolor="#4CAF50", color=ft.Colors.WHITE, style=button_style
+                    )
+                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=20, bgcolor="#F1F8E9", border_radius=20, width=360,
+                shadow=ft.BoxShadow(blur_radius=10, spread_radius=1, color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK))
+            )
+
+            # Mancha-bacteriana (em desenvolvimento)
+            mancha_bacteriana_card = ft.Container(
+                content=ft.Column([
+                    create_image_with_fallback(
+                        "mancha bacteriana.png", 
+                        width=300, height=180, fit=ft.ImageFit.COVER, border_radius=15
+                    ),
+                    ft.Text("Mancha-bacteriana", size=22, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                    ft.Text("(Xanthomonas euvesicatoria)", size=16, color="#424242", italic=True),
+                    ft.Text(
+                        "Começa com pequenas manchas escuras e úmidas nas folhas. "
+                        "Essas manchas crescem, ficam secas e podem atingir também os frutos.",
+                        size=14, text_align=ft.TextAlign.JUSTIFY, color="#424242"
+                    ),
+                    ft.ElevatedButton(
+                        "Em Desenvolvimento",
+                        on_click=lambda e: mostrar_mensagem_desenvolvimento("Mancha-bacteriana"),
+                        bgcolor="#FFB74D", color=ft.Colors.WHITE, style=button_style,
+                        disabled=True
+                    )
+                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=20, bgcolor="#F1F8E9", border_radius=20, width=360,
+                shadow=ft.BoxShadow(blur_radius=10, spread_radius=1, color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK)),
+                opacity=0.7
+            )
+            
+            # Botão de detecção com IA
+            deteccao_ai_card = ft.Container(
+                content=ft.Column([
+                    ft.Icon(ft.Icons.CAMERA_ALT_OUTLINED, size=80, color="#1976D2"),
+                    ft.Text("Detectar Doença com IA", size=22, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                    ft.Text("(YOLOv8 - Inteligência Artificial)", size=16, color="#424242", italic=True),
+                    ft.Text(
+                        "Use a câmera para capturar uma imagem da folha e nossa IA identificará automaticamente "
+                        "qual doença está presente: Cercosporiose, Mosaico ou Mancha-bacteriana.",
+                        size=14, text_align=ft.TextAlign.JUSTIFY, color="#424242"
+                    ),
+                    ft.ElevatedButton(
+                        "📷 Detectar com IA",
+                        on_click=lambda e: abrir_tela_deteccao_ia(lat, lon, cultura, location_display),
+                        bgcolor="#1976D2", color=ft.Colors.WHITE, style=button_style
+                    )
+                ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=20, bgcolor="#E3F2FD", border_radius=20, width=360,
+                shadow=ft.BoxShadow(blur_radius=10, spread_radius=1, color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK))
+            )
+            
+            doencas_container.controls.extend([deteccao_ai_card, cercosporiose_card, mosaico_card, mancha_bacteriana_card])
+            
+        elif cultura == "Tomate":
+            # Mensagem de desenvolvimento para tomate
+            tomate_card = ft.Container(
+                content=ft.Column([
+                    ft.Icon(ft.Icons.CONSTRUCTION, size=80, color="#FF9800"),
+                    ft.Text("Cultura do Tomate", size=24, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                    ft.Text(
+                        "Esta cultura está em desenvolvimento.\nEm breve teremos diagnósticos disponíveis para tomate.",
+                        size=16, text_align=ft.TextAlign.CENTER, color="#424242"
+                    ),
+                    ft.ElevatedButton(
+                        "Voltar",
+                        on_click=lambda e: mostrar_tela_inicial(),
+                        bgcolor="#4CAF50", color=ft.Colors.WHITE, style=button_style
+                    )
+                ], spacing=20, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=30, bgcolor="#FFF8E1", border_radius=20, width=360,
+                shadow=ft.BoxShadow(blur_radius=10, spread_radius=1, color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK))
+            )
+            doencas_container.controls.append(tomate_card)
+        
+        # Botão voltar
+        botao_voltar = ft.ElevatedButton(
+            "Voltar para Início", 
+            on_click=lambda e: mostrar_tela_inicial(),
+            bgcolor="#9E9E9E", color=ft.Colors.WHITE, style=button_style
+        )
+        
+        page.add(ft.Column([
+            header_doencas,
+            doencas_container,
+            botao_voltar
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=30, scroll=ft.ScrollMode.AUTO, expand=True))
+        
+        page.update()
+    
+    def mostrar_mensagem_desenvolvimento(doenca_nome):
+        """Mostra mensagem de desenvolvimento para doenças não implementadas"""
+        page.dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Em Desenvolvimento"),
+            content=ft.Text(f"O diagnóstico para {doenca_nome} está em desenvolvimento.\n\nEm breve esta funcionalidade estará disponível."),
+            actions=[
+                ft.TextButton("OK", on_click=lambda e: page.close_dialog())
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        page.dialog.open = True
+        page.update()
+    
+    def prosseguir_com_doenca(doenca, lat, lon, cultura, location_display):
+        """Prossegue para a tela principal com a doença selecionada"""
+        page.clean()
+        page.add(ft.Column([ft.ProgressRing(), ft.Text("Carregando dados climáticos...")], 
+                          horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
+                          alignment=ft.MainAxisAlignment.CENTER, expand=True))
+        page.update()
+        
+        APP_STATE["doenca_selecionada"] = doenca
+        
+        # Usar thread para carregar dados
+        threading.Thread(target=lambda: mostrar_nova_tela(lat, lon, cultura, location_display), daemon=True).start()
+
     def on_ok_click():
         cultura = dropdown_cultura.value
         if not cultura: return
@@ -1244,24 +1432,310 @@ def main(page: ft.Page):
             location_display = f"Lat: {lat:.4f}, Lon: {lon:.4f}"
             cidade = None
         
-        page.clean()
-        page.add(ft.Column([ft.ProgressRing(), ft.Text("Carregando dados...")], horizontal_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER, expand=True))
-        page.update()
-        
+        # Armazenar dados no estado
         APP_STATE["cidade_selecionada"] = cidade
         APP_STATE["location_display"] = location_display
         APP_STATE["cultura_selecionada"] = cultura
         
-        # Usar um thread para não bloquear a UI enquanto os dados são carregados
-        threading.Thread(target=lambda: mostrar_nova_tela(lat, lon, cultura, location_display), daemon=True).start()
+        # Ir para tela de seleção de doenças
+        mostrar_tela_selecao_doencas(cultura, lat, lon, location_display, cidade)
+
+    def abrir_tela_deteccao_ia(lat, lon, cultura, location_display):
+        """Tela para detecção de doenças usando IA (YOLOv8)"""
+        page.clean()
+        
+        # Limpar estado de upload
+        APP_STATE["uploaded_files_data"] = []
+        
+        # Header
+        header_deteccao = ft.Row([
+            ft.Icon(ft.Icons.AUTO_FIX_HIGH, size=40, color="#1976D2"), 
+            ft.Text("Detectar Doença com IA", size=26, weight=ft.FontWeight.BOLD, color="#1976D2")
+        ], alignment=ft.MainAxisAlignment.CENTER, spacing=15)
+        
+        # Instruções
+        instrucoes_container = ft.Container(
+            content=ft.Column([
+                ft.Text("Como usar:", size=20, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                ft.Text("1. Tire uma foto da folha doente", size=16, color="#424242"),
+                ft.Text("2. Centralize a folha na imagem", size=16, color="#424242"),
+                ft.Text("3. Nossa IA identificará a doença automaticamente", size=16, color="#424242"),
+                ft.Text("\n🔍 Doenças detectáveis:", size=18, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                ft.Text("• Cercosporiose", size=16, color="#424242"),
+                ft.Text("• Mosaico", size=16, color="#424242"), 
+                ft.Text("• Mancha-bacteriana", size=16, color="#424242"),
+            ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.START),
+            padding=25, bgcolor="#F1F8E9", border_radius=20, width=380
+        )
+        
+        # Status da detecção
+        detection_status = ft.Text("Nenhuma imagem capturada", size=16, color="#424242")
+        detection_result = ft.Text("", size=18, color="#2E7D32", weight=ft.FontWeight.BOLD)
+        
+        # Imagem capturada (preview)
+        image_preview = ft.Column(visible=False)
+        
+        # Progress indicators
+        progress_ring = ft.ProgressRing(visible=False, width=60, height=60, color="#1976D2")
+        progress_text = ft.Text("", size=16, color="#2E7D32", text_align=ft.TextAlign.CENTER)
+        
+        # Botão de resultado (inicialmente invisível)
+        btn_resultado = ft.ElevatedButton(
+            "Continuar com Doença Detectada",
+            visible=False,
+            bgcolor="#4CAF50", 
+            color=ft.Colors.WHITE, 
+            style=button_style
+        )
+        
+        def update_detection_display():
+            """Atualiza o display baseado no estado de upload"""
+            num_imagens = len(APP_STATE.get("uploaded_files_data", []))
+            
+            if num_imagens > 0:
+                detection_status.value = f"✅ {num_imagens} imagem(ns) capturada(s)"
+                detection_status.color = "#4CAF50"
+                
+                # Mostrar preview da primeira imagem
+                if num_imagens > 0:
+                    file_data = APP_STATE["uploaded_files_data"][0]
+                    # Converter bytes para base64 para preview
+                    import base64
+                    img_b64 = base64.b64encode(file_data["bytes"]).decode('utf-8')
+                    
+                    image_preview.controls = [
+                        ft.Text("Preview da imagem:", size=16, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                        ft.Image(
+                            src_base64=img_b64,
+                            width=200,
+                            height=200,
+                            fit=ft.ImageFit.CONTAIN,
+                            border_radius=10
+                        )
+                    ]
+                    image_preview.visible = True
+                    
+                btn_detectar.disabled = False
+            else:
+                detection_status.value = "Nenhuma imagem capturada"
+                detection_status.color = "#424242"
+                image_preview.visible = False
+                btn_detectar.disabled = True
+                
+            page.update()
+        
+        # Sistema de upload baseado no existente
+        def abrir_upload_html(e):
+            print("📷 Abrindo página de upload para detecção...")
+            upload_url = "/upload.html"
+            page.launch_url(upload_url)
+            
+            def poll_uploads():
+                update_detection_display()
+                threading.Timer(3, poll_uploads).start()
+            
+            poll_uploads()
+        
+        # Botão de captura
+        btn_capturar = ft.ElevatedButton(
+            "📷 Capturar Imagem da Folha", 
+            on_click=abrir_upload_html,
+            width=280, 
+            bgcolor="#1976D2", 
+            color=ft.Colors.WHITE, 
+            style=button_style,
+            content=ft.Row([
+                ft.Icon(ft.Icons.CAMERA_ALT_OUTLINED, size=20, color="white"), 
+                ft.Text("Capturar Imagem", size=18)
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+        )
+        
+        # Função de detecção
+        def detectar_doenca_callback(e):
+            if not APP_STATE.get("uploaded_files_data"):
+                progress_text.value = "Nenhuma imagem capturada!"
+                page.update()
+                return
+
+            def processing():
+                try:
+                    # Mostrar progresso
+                    progress_text.value = "Analisando imagem com IA..."
+                    progress_ring.visible = True
+                    detection_result.value = ""
+                    btn_resultado.visible = False
+                    page.update()
+                    
+                    # Pegar primeira imagem
+                    file_data = APP_STATE["uploaded_files_data"][0]
+                    file_b64 = base64.b64encode(file_data["bytes"]).decode('utf-8')
+                    
+                    # Chamar API de detecção
+                    response = requests.post(
+                        f"{API_URL}/detect_disease",
+                        json={"file": file_b64},
+                        headers={"Content-Type": "application/json"},
+                        timeout=60
+                    )
+                    
+                    progress_ring.visible = False
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        detected_disease = result.get("detected_disease", "indefinido")
+                        detections = result.get("detections", [])
+                        confidence = result.get("confidence", 0.0)
+                        plot_image_b64 = result.get("plot_image_b64", "")
+                        
+                        # Mapear resultado para nome amigável
+                        disease_names = {
+                            "cercosporiose": "Cercosporiose",
+                            "mosaico": "Mosaico", 
+                            "mancha-bacteriana": "Mancha-bacteriana"
+                        }
+                        
+                        # Criar resultado visual com detecções múltiplas
+                        if detections and detected_disease in disease_names:
+                            disease_display = disease_names[detected_disease]
+                            
+                            # Mostrar resultado principal
+                            detection_result.value = f"🎯 Doença detectada: {disease_display}\n💯 Confiança: {confidence:.1%}"
+                            detection_result.color = "#4CAF50"
+                            
+                            # Adicionar informações de múltiplas detecções se houver
+                            if len(detections) > 1:
+                                other_detections = []
+                                for det in detections[1:]:  # Pular a primeira (principal)
+                                    det_name = disease_names.get(det['class_name'].lower(), det['class_name'])
+                                    other_detections.append(f"• {det_name}: {det['confidence']:.1%}")
+                                
+                                if other_detections:
+                                    detection_result.value += f"\n\n🔍 Outras detecções:\n" + "\n".join(other_detections)
+                            
+                            # Mostrar imagem com bounding boxes
+                            if plot_image_b64:
+                                image_preview.controls = [
+                                    ft.Text("Resultado da Detecção:", size=16, weight=ft.FontWeight.BOLD, color="#2E7D32"),
+                                    ft.Image(
+                                        src_base64=plot_image_b64,
+                                        width=300,
+                                        height=300,
+                                        fit=ft.ImageFit.CONTAIN,
+                                        border_radius=10
+                                    ),
+                                    ft.Text(f"✅ {len(detections)} detecção(ões) encontrada(s)", size=14, color="#424242")
+                                ]
+                                image_preview.visible = True
+                            
+                            # Armazenar resultado no estado
+                            APP_STATE["doenca_detectada"] = detected_disease
+                            APP_STATE["doenca_selecionada"] = disease_display
+                            
+                            # Configurar botão baseado na doença
+                            if detected_disease == "cercosporiose":
+                                btn_resultado.content = ft.Row([
+                                    ft.Icon(ft.Icons.ARROW_FORWARD, size=20, color="white"),
+                                    ft.Text("Continuar com Cercosporiose", size=18)
+                                ], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+                                btn_resultado.on_click = lambda e: mostrar_nova_tela(lat, lon, cultura, location_display)
+                            else:
+                                btn_resultado.content = ft.Row([
+                                    ft.Icon(ft.Icons.INFO_OUTLINED, size=20, color="white"),
+                                    ft.Text(f"Sobre {disease_display}", size=18)
+                                ], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+                                btn_resultado.on_click = lambda e: mostrar_mensagem_desenvolvimento_deteccao(disease_display)
+                                
+                            btn_resultado.visible = True
+                        else:
+                            detection_result.value = "❓ Não foi possível identificar a doença"
+                            detection_result.color = "#FF5722"
+                            progress_text.value = "Tente capturar outra imagem com melhor qualidade"
+                            
+                    else:
+                        detection_result.value = "❌ Erro na detecção"
+                        detection_result.color = "#D32F2F"
+                        progress_text.value = f"Erro do servidor: {response.status_code}"
+                    
+                    page.update()
+                    
+                except Exception as ex:
+                    print(f"Erro na detecção: {ex}")
+                    progress_ring.visible = False
+                    detection_result.value = "❌ Erro na conexão"
+                    detection_result.color = "#D32F2F"
+                    progress_text.value = "Verifique sua conexão com a internet"
+                    page.update()
+
+            threading.Thread(target=processing, daemon=True).start()
+        
+        # Botão de detectar
+        btn_detectar = ft.ElevatedButton(
+            "🔍 Detectar Doença", 
+            on_click=detectar_doenca_callback,
+            disabled=True,
+            width=280, 
+            bgcolor="#FF9800", 
+            color=ft.Colors.WHITE, 
+            style=button_style,
+            content=ft.Row([
+                ft.Icon(ft.Icons.AUTO_FIX_HIGH, size=20, color="white"), 
+                ft.Text("Detectar com IA", size=18)
+            ], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+        )
+        
+        def mostrar_mensagem_desenvolvimento_deteccao(doenca_nome):
+            """Mostra mensagem que a doença está em desenvolvimento"""
+            page.dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text(f"{doenca_nome} Detectada"),
+                content=ft.Text(f"A IA detectou {doenca_nome} na sua imagem!\n\nNo entanto, o diagnóstico completo para {doenca_nome} ainda está em desenvolvimento.\n\nEm breve esta funcionalidade estará disponível."),
+                actions=[
+                    ft.TextButton("OK", on_click=lambda e: page.close_dialog())
+                ],
+                actions_alignment=ft.MainAxisAlignment.END,
+            )
+            page.dialog.open = True
+            page.update()
+        
+        # Botão voltar
+        btn_voltar = ft.ElevatedButton(
+            "Voltar", 
+            on_click=lambda e: mostrar_tela_selecao_doencas(cultura, lat, lon, location_display, APP_STATE.get("cidade_selecionada")),
+            bgcolor="#9E9E9E", 
+            color=ft.Colors.WHITE, 
+            style=button_style
+        )
+        
+        page.add(ft.Column([
+            header_deteccao,
+            instrucoes_container,
+            ft.Container(
+                content=ft.Column([
+                    detection_status,
+                    image_preview,
+                    btn_capturar,
+                    btn_detectar,
+                    progress_ring,
+                    progress_text,
+                    detection_result,
+                    btn_resultado
+                ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=15),
+                padding=25, bgcolor="#E3F2FD", border_radius=20, width=380
+            ),
+            btn_voltar
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=25, scroll=ft.ScrollMode.AUTO, expand=True))
+        
+        page.update()
+        
+        # Iniciar polling
+        update_detection_display()
 
     def mostrar_tela_inicial(e=None):
         page.clean()
         page.add(
             ft.Column([
                 header_inicial, 
-                dropdown_cultura, 
-                dropdown_doenca,
+                dropdown_cultura,
                 ft.Container(
                     content=ft.Column([
                         ft.Text("Selecione a localização:", size=16, weight=ft.FontWeight.BOLD),

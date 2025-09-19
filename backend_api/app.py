@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import base64
 import uuid
+from typing import Dict, List
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image
@@ -27,6 +28,19 @@ os.makedirs(PLOTS_FOLDER, exist_ok=True)
 MODEL_PATH = "yolov8n-seg.pt" 
 model = YOLO(MODEL_PATH)
 print("Modelo YOLO carregado com sucesso.")
+
+# Modelo para detecção de doenças (YOLOv8 para classificação)
+DETECTION_MODEL_PATH = "modelo-deteccao.pt"
+detection_model = None
+if os.path.exists(DETECTION_MODEL_PATH):
+    try:
+        detection_model = YOLO(DETECTION_MODEL_PATH)
+        print("Modelo YOLOv8 de detecção carregado com sucesso.")
+    except Exception as e:
+        print(f"ERRO ao carregar modelo de detecção: {e}")
+        detection_model = None
+else:
+    print(f"AVISO: Modelo de detecção não encontrado em {DETECTION_MODEL_PATH}")
 
 # --- Lógica de Processamento de Imagem ---
 TARGET_SIZE = (640, 640)
@@ -163,6 +177,122 @@ def preprocess_image(image_path: str, output_path: str) -> None:
     
     # Limpeza explícita de memória
     del pil_img, output_img, background, composited, img, img_square, img_zoomed, img_resized
+
+def preprocess_image_detection(image_path: str, output_path: str) -> None:
+    """Redimensiona imagem para 256x256 para detecção de doenças com YOLOv8"""
+    print(f"[DEBUG] Redimensionando imagem para detecção: {image_path} -> {output_path}")
+    
+    # Carregar imagem
+    img = cv2.imread(image_path)
+    if img is None:
+        print(f"Erro ao carregar a imagem: {image_path}")
+        return
+    
+    # Redimensionar para 256x256
+    img_resized = cv2.resize(img, (256, 256), interpolation=cv2.INTER_CUBIC)
+    
+    # Salvar imagem redimensionada
+    cv2.imwrite(output_path, img_resized)
+    print(f"[DEBUG] Imagem redimensionada salva: {output_path} (256x256)")
+
+def detect_disease(image_path: str) -> Dict:
+    """Detecta doença na imagem usando modelo YOLOv8 e retorna resultados detalhados"""
+    if detection_model is None:
+        raise ValueError("Modelo de detecção não está carregado")
+    
+    # Fazer inferência
+    results = detection_model.predict(image_path, conf=0.3, save=False)
+    
+    print(f"[DEBUG] Número de resultados: {len(results)}")
+    
+    # Verificar se há resultados
+    if len(results) == 0:
+        return {"disease": "indefinido", "detections": [], "confidence": 0.0}
+    
+    result = results[0]
+    
+    # Verificar se há detecções
+    if result.boxes is None or len(result.boxes) == 0:
+        print("[DEBUG] Nenhuma detecção encontrada")
+        return {"disease": "indefinido", "detections": [], "confidence": 0.0}
+    
+    # Processar detecções baseado no código fornecido
+    detections = []
+    
+    for box, conf, cls in zip(result.boxes.xyxy, result.boxes.conf, result.boxes.cls):
+        detection = {
+            'bbox': box.cpu().numpy().tolist(),  # [x_min, y_min, x_max, y_max]
+            'confidence': float(conf.cpu().numpy()),  # Confidence score
+            'class_id': int(cls.cpu().numpy()),  # Class ID
+            'class_name': result.names[int(cls.cpu().numpy())]  # Class name
+        }
+        detections.append(detection)
+        print(f"[DEBUG] Detecção: {detection}")
+    
+    # Ordenar por confiança (maior primeiro)
+    detections.sort(key=lambda x: x['confidence'], reverse=True)
+    
+    # Determinar doença principal (maior confiança)
+    if detections:
+        main_detection = detections[0]
+        disease_name = main_detection['class_name'].lower()
+        confidence = main_detection['confidence']
+        
+        print(f"[DEBUG] Doença principal detectada: {disease_name} (conf: {confidence:.3f})")
+        
+        return {
+            "disease": disease_name,
+            "detections": detections,
+            "confidence": confidence
+        }
+    else:
+        return {"disease": "indefinido", "detections": [], "confidence": 0.0}
+
+def plot_detections(image_path: str, detections: List[Dict], output_path: str) -> None:
+    """Plota bounding boxes com confidence na imagem"""
+    import cv2
+    
+    # Carregar imagem original
+    img = cv2.imread(image_path)
+    if img is None:
+        print(f"Erro ao carregar imagem para plotagem: {image_path}")
+        return
+    
+    # Cores para diferentes classes (BGR format)
+    colors = {
+        'cercosporiose': (0, 255, 0),     # Verde
+        'mosaico': (255, 0, 0),           # Azul  
+        'mancha-bacteriana': (0, 0, 255)  # Vermelho
+    }
+    
+    # Plotar cada detecção
+    for detection in detections:
+        bbox = detection['bbox']
+        confidence = detection['confidence']
+        class_name = detection['class_name']
+        
+        # Coordenadas do bounding box
+        x1, y1, x2, y2 = map(int, bbox)
+        
+        # Cor baseada na classe
+        color = colors.get(class_name.lower(), (255, 255, 255))  # Branco como padrão
+        
+        # Desenhar retângulo
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        
+        # Texto com classe e confidence
+        label = f"{class_name}: {confidence:.2f}"
+        label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        
+        # Fundo para o texto
+        cv2.rectangle(img, (x1, y1 - label_size[1] - 10), (x1 + label_size[0], y1), color, -1)
+        
+        # Texto
+        cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    
+    # Salvar imagem com detecções
+    cv2.imwrite(output_path, img)
+    print(f"[DEBUG] Imagem com detecções salva: {output_path}")
 
 def calcular_severidade(image_path_processada: str, plot_path: str) -> float:
     """Calcula severidade seguindo exatamente o algoritmo de referência"""
@@ -337,6 +467,78 @@ def predict():
 
     except Exception as e:
         print(f"Erro durante o processamento: {e}")
+        return jsonify({"error": f"Erro interno no servidor: {str(e)}"}), 500
+
+@app.route("/detect_disease", methods=["POST"])
+def detect_disease_endpoint():
+    """Endpoint para detectar doença usando YOLOv8"""
+    if 'file' not in request.json:
+        return jsonify({"error": "Nenhum arquivo enviado"}), 400
+    
+    # Verificar se o modelo está carregado
+    if detection_model is None:
+        return jsonify({"error": "Modelo de detecção não está disponível"}), 503
+    
+    # Decodificar imagem base64
+    image_data_b64 = request.json['file']
+    try:
+        image_data = base64.b64decode(image_data_b64)
+    except Exception as e:
+        return jsonify({"error": f"Erro ao decodificar base64: {str(e)}"}), 400
+
+    # Salvar imagem temporária
+    filename = f"detect_{uuid.uuid4()}.jpg"
+    input_path = os.path.join(INPUT_FOLDER, filename)
+    processed_path = os.path.join(OUTPUT_FOLDER, f"processed_{filename}")
+    plot_path = os.path.join(PLOTS_FOLDER, f"plot_{filename}")
+
+    with open(input_path, "wb") as f:
+        f.write(image_data)
+
+    try:
+        # Preprocessar imagem para 256x256
+        print(f"Processando detecção para arquivo: {filename}")
+        preprocess_image_detection(input_path, processed_path)
+        
+        # Detectar doença
+        detection_result = detect_disease(processed_path)
+        detected_disease = detection_result["disease"]
+        detections = detection_result["detections"]
+        confidence = detection_result["confidence"]
+        
+        # Plotar detecções na imagem original (redimensionada)
+        plot_detections(processed_path, detections, plot_path)
+        
+        # Codificar imagem com detecções para envio
+        plot_image_b64 = ""
+        if os.path.exists(plot_path):
+            with open(plot_path, "rb") as f:
+                plot_image_b64 = base64.b64encode(f.read()).decode('utf-8')
+
+        # Limpar arquivos temporários
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(processed_path):
+            os.remove(processed_path)
+        if os.path.exists(plot_path):
+            os.remove(plot_path)
+
+        # Retornar resultado detalhado
+        return jsonify({
+            "detected_disease": detected_disease,
+            "detections": detections,
+            "confidence": confidence,
+            "plot_image_b64": plot_image_b64,
+            "success": True
+        })
+
+    except Exception as e:
+        print(f"Erro durante a detecção: {e}")
+        # Limpar arquivos em caso de erro
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(processed_path):
+            os.remove(processed_path)
         return jsonify({"error": f"Erro interno no servidor: {str(e)}"}), 500
 
 if __name__ == "__main__":

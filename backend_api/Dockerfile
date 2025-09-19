@@ -44,9 +44,8 @@ RUN pip install ultralytics==8.0.232 --no-deps
 RUN pip install Flask==3.0.0 Flask-Cors==4.0.0 gunicorn==21.2.0
 RUN pip install Pillow==10.2.0 PyYAML==6.0.1 requests==2.31.0 matplotlib==3.8.2 tqdm==4.66.1 psutil==5.9.8 py-cpuinfo==9.0.0 onnxruntime==1.16.3 rembg==2.0.67 pandas==2.1.4 seaborn==0.13.0
 
-# Copiar código da aplicação
+# Copiar código da aplicação e modelos
 COPY . .
-COPY yolov8n-seg.pt .
 
 # Expor porta
 EXPOSE 8080
